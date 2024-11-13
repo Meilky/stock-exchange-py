@@ -39,6 +39,9 @@ class MarketData:
         self.bids = []
         self.spread = None
 
+    def __str__(self):
+        return f"- {f"{self.asks[0][1]}@{self.asks[0][0]}" if len(self.asks) > 0  else "N/A"}\n= {self.spread if self.spread != None else "N/A"}\n+ {f"{self.bids[0][1]}@{self.bids[0][0]}" if len(self.bids) > 0  else "N/A"}"
+
 
 class Stock:
     symbol: str
@@ -53,21 +56,34 @@ class Stock:
     def get_l1_data(self) -> MarketData:
         data = MarketData()
 
-        ask_amount = None
+        ask_limit = None
         if len(self.sell_orders) > 0:
-            ask = self.sell_orders[0]
+            ask_amount = 0
+            ask_limit = self.sell_orders[0].limit
 
-            data.asks.append(())
-        highest_bid = self.buy_orders[0]
-        lowest_ask = self.sell_orders[0]
+            for sell_order in self.sell_orders:
+                if sell_order.limit != ask_limit:
+                    break
 
-        spread = float("nan")
+                ask_amount += sell_order.amount
 
-        # NaN are not equal to each other
-        if (lowest_ask.limit == lowest_ask.limit) and (
-            highest_bid.limit == highest_bid.limit
-        ):
-            spread = lowest_ask.limit - highest_bid.limit
+            data.asks.append((ask_limit, ask_amount))
+
+        bid_limit = None
+        if len(self.buy_orders) > 0:
+            bid_amount = 0
+            bid_limit = self.buy_orders[0].limit
+
+            for buy_order in self.buy_orders:
+                if buy_order.limit != bid_limit:
+                    break
+
+                bid_amount += buy_order.amount
+
+            data.bids.append((bid_limit, bid_amount))
+
+        if (bid_limit != None) and (ask_limit != None):
+            data.spread = ask_limit - bid_limit
 
         return data
 
@@ -83,7 +99,16 @@ class Exchange:
         self.name = name
 
     def add_stock(self, stock: Stock):
+        if stock.symbol in self.stocks.keys():
+            return
+
         self.stocks[stock.symbol] = stock
+
+    def get_l1_data(self, symbol: str) -> None | MarketData:
+        if not (symbol in self.stocks.keys()):
+            return
+
+        return self.stocks[symbol].get_l1_data()
 
     def order(
         self,
@@ -92,24 +117,31 @@ class Exchange:
         amount: int,
         limit: float | None = None,
     ):
-        order = Order()
+        if not (symbol in self.stocks.keys()):
+            return
 
-        order.id = self.next_order_id
-        order.symbol = symbol
-        order.limit = limit
-        order.action = action
-        order.amount = amount
+        order = Order(self.next_order_id, symbol, action, amount, limit)
 
         self.next_order_id += 1
 
-        return order
+        stock = self.stocks[symbol]
+
+        if action == OrderAction.BUY:
+            stock.buy_orders.append(order)
+        elif action == OrderAction.SELL:
+            stock.sell_orders.append(order)
 
 
 def main():
     nasdaq = Exchange("nasdaq")
 
-    nasdaq.add_stock(Stock("aaple"))
+    nasdaq.add_stock(Stock("aapl"))
+
+    nasdaq.order("aapl", OrderAction.BUY, 10, 100)
+    nasdaq.order("aapl", OrderAction.SELL, 10, 125)
+
+    print(nasdaq.get_l1_data("aapl"))
 
 
-if __name__ == "main":
+if __name__ == "__main__":
     main()
